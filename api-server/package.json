@@ -1,0 +1,26 @@
+{
+  "name": "api-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@aws-sdk/client-ecs": "^3.1033.0",
+    "express": "^5.2.1",
+    "ioredis": "^5.10.1",
+    "random-word-slugs": "^0.1.7",
+    "socket": "^1.1.86",
+    "socket.io": "^4.8.3",
+    "socketio": "^1.0.0"
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.2",
+    "prisma": "^7.8.0"
+  }
+}
