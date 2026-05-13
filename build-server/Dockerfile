@@ -16,6 +16,7 @@ WORKDIR /home/app
 COPY main.sh main.sh
 COPY script.js script.js
 COPY package*.json .
+COPY ca.pem ca.pem
 RUN npm install
 
 RUN chmod +x main.sh

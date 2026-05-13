@@ -3,12 +3,30 @@ const path = require('path');
 const fs = require('fs');
 const {S3Client, PutObjectCommand} = require('@aws-sdk/client-s3')
 const mime = require('mime-types');
-const Redis = require('ioredis');
+const {Kafka}  = require('kafkajs')
 
-const publisher = new Redis(process.env.REDIS_URL);
+const PROJECT_ID = process.env.PROJECT_ID;
+const DEPLOYMENT_ID = process.env.DEPLOYMENT_ID;
 
-function publishLog(log){
-    publisher.publish(`logs:${PROJECT_ID}`, JSON.stringify({log}))
+const kafka = new Kafka({
+    brokers:[process.env.KAFKA_BROKER],
+    clientId:`docker-build-server-${DEPLOYMENT_ID}`,
+    sasl:{
+        username: process.env.KAFKA_USERNAME,
+        password: process.env.KAFKA_PASSWORD,
+        mechanism:'plain'
+    },
+    ssl: {
+        ca:[fs.readFileSync(path.join(__dirname,'ca.pem'),'utf-8')]
+    }
+})
+
+const producer = kafka.producer();
+
+
+
+async function publishLog(log){
+    await producer.send({topic:`container-logs`, messages:[{key:'log', value:JSON.stringify({PROJECT_ID, DEPLOYMENT_ID, log})}]})
 }
 
 
@@ -20,44 +38,43 @@ const s3Client = new S3Client({
     }
 })
 
-const PROJECT_ID = process.env.PROJECT_ID;
-
-
-
 async function init() {
+    await producer.connect();
+
+
     console.log("executing script.js");
     const outDirPath = path.join(__dirname, 'output');
-    publishLog('Build Started...')
+    await publishLog('Build Started...')
     const p = exec(`cd ${outDirPath} && rm -rf node_modules package-lock.json && npm install && npm run build`)
 
-    p.stdout.on('data', function(data){
+    p.stdout.on('data', async function(data){
         console.log(data.toString());
-        publishLog(data.toString());
+        await publishLog(data.toString());
     })
 
-    p.stderr.on('data', function(data){
+    p.stderr.on('data', async function(data){
         console.error('Error', data.toString());
-        publishLog(`Error: ${data.toString()}`);
+        await publishLog(`Error: ${data.toString()}`);
     })
 
     p.on('close', async function (code){
         if (code !== 0) {
             console.error(`Build failed with exit code ${code}`);
-            publishLog(`Build failed with exit code ${code}`);
+            await publishLog(`Build failed with exit code ${code}`);
             return;
         }
         console.log('Build Complete')
-        publishLog('Build Complete')
+        await publishLog('Build Complete')
         const distFolderPath = path.join(__dirname, 'output', 'dist')
         const distFolderContents = fs.readdirSync(distFolderPath, {recursive: true});
 
-        publishLog('Starting to upload files.')
+        await publishLog('Starting to upload files.')
         for(const file of distFolderContents){
             const filePath = path.join(distFolderPath, file)
             if(fs.lstatSync(filePath).isDirectory()) continue;
 
             console.log('Uploading', filePath)
-            publishLog(`Uploading ${file}...`)
+            await publishLog(`Uploading ${file}...`)
             const command = new PutObjectCommand({
                 Bucket: process.env.S3_BUCKET,
                 Key: `__outputs/${PROJECT_ID}/${file}`,
@@ -68,10 +85,12 @@ async function init() {
             await s3Client.send(command);
 
             console.log('Upload complete', filePath);
-            publishLog(`Upload complete: ${file}`)
+            await publishLog(`Upload complete: ${file}`)
         }
         console.log('Done...')
-        publishLog('Done...')
+        await publishLog('Done...')
+        process.exit(0);
+
     })
 }
 
